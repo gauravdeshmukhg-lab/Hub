@@ -1,0 +1,6 @@
+{
+  "name": "OmniHub: Unified Feed & Launcher",
+  "description": "All-in-one timeline for incoming calls, WhatsApp messages, emails, app notifications & full app operator center.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">OmniHub</string>
+    <string name="notification_service_name">OmniHub Listener Service</string>
+</resources>
