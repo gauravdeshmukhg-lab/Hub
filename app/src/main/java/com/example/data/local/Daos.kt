@@ -15,6 +15,15 @@ interface NotificationDao {
     @Query("SELECT * FROM notifications WHERE categoryName = :category ORDER BY timestamp DESC")
     fun getNotificationsByCategory(category: String): Flow<List<NotificationEntity>>
 
+    @Query("SELECT * FROM notifications WHERE notificationKey = :key LIMIT 1")
+    suspend fun getNotificationByKey(key: String): NotificationEntity?
+
+    @Query("SELECT COUNT(*) FROM notifications")
+    suspend fun getNotificationCount(): Int
+
+    @Update
+    suspend fun updateNotification(notification: NotificationEntity)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNotification(notification: NotificationEntity): Long
 

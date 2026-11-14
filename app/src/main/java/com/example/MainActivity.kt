@@ -226,8 +226,13 @@ fun OmniAppContent(viewModel: OmniViewModel) {
                     onCallClick = { num -> viewModel.makePhoneCall(context, num) },
                     onWhatsAppClick = { num -> viewModel.launchWhatsAppChat(context, num) },
                     onSendQuickReply = { item, msg ->
-                        Toast.makeText(context, "Reply sent to ${item.title}: \"$msg\"", Toast.LENGTH_SHORT).show()
-                        viewModel.markAsRead(item)
+                        val sentLive = viewModel.sendQuickReply(context, item, msg)
+                        val toastMsg = if (sentLive) {
+                            "Reply sent to ${item.title} via ${item.appName}"
+                        } else {
+                            "Reply saved for ${item.title} (open ${item.appName} to send)"
+                        }
+                        Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                     },
                     onOpenPermissionSettings = { selectedTab = 4 },
                     onResetDemoData = { viewModel.resetDemoData() },

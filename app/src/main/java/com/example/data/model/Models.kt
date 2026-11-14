@@ -54,6 +54,8 @@ sealed class UnifiedTimelineItem {
     data class NotificationItem(
         override val id: String,
         val dbId: Long,
+        val notificationKey: String? = null,
+        val canReply: Boolean = false,
         val packageName: String,
         val appName: String,
         override val title: String,

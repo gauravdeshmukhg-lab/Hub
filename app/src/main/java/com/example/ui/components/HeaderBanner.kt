@@ -110,6 +110,7 @@ fun HeaderBanner(
 
                     // Listener service status pill
                     Surface(
+                        onClick = onPermissionClick,
                         shape = CircleShape,
                         color = if (isListenerActive) Color(0xFF4CAF50) else Color(0xFFFF9800),
                         modifier = Modifier.clip(CircleShape)

@@ -27,6 +27,8 @@ class NotificationRepository(
 
     suspend fun deleteSetting(packageName: String) = settingsDao.deleteSetting(packageName)
 
+    suspend fun getNotificationCount(): Int = dao.getNotificationCount()
+
     suspend fun insert(notification: NotificationEntity) = dao.insertNotification(notification)
 
     suspend fun insertAll(notifications: List<NotificationEntity>) = dao.insertAll(notifications)

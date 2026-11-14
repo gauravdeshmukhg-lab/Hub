@@ -145,7 +145,7 @@ fun TimelineCard(
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (item.category == NotificationCategory.WHATSAPP) {
+                        if (item.canReply || item.category == NotificationCategory.WHATSAPP || item.category == NotificationCategory.MESSAGES) {
                             AssistChip(
                                 onClick = { onQuickReply(item) },
                                 label = { Text("Quick Reply", fontSize = 12.sp) },

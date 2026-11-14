@@ -20,6 +20,7 @@ import com.example.data.model.UnifiedTimelineItem
 import com.example.data.repository.AppLauncherRepository
 import com.example.data.repository.CallLogRepository
 import com.example.data.repository.NotificationRepository
+import com.example.service.NotificationHubService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -163,6 +164,8 @@ class OmniViewModel(
             UnifiedTimelineItem.NotificationItem(
                 id = "NOTIF_${entity.id}",
                 dbId = entity.id,
+                notificationKey = entity.notificationKey,
+                canReply = NotificationHubService.canReply(entity.notificationKey),
                 packageName = entity.packageName,
                 appName = entity.appName,
                 title = entity.title,
@@ -423,8 +426,18 @@ class OmniViewModel(
         }
     }
 
+    fun sendQuickReply(
+        context: Context,
+        item: UnifiedTimelineItem.NotificationItem,
+        message: String
+    ): Boolean {
+        val sentLive = NotificationHubService.sendInlineReply(context, item.notificationKey, message)
+        markAsRead(item)
+        return sentLive
+    }
+
     fun checkPermissions(context: Context) {
-        val listenerGranted = isNotificationListenerPermissionGranted(context)
+        val listenerGranted = NotificationHubService.isPermissionGranted(context)
         val callLogGranted = ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.READ_CALL_LOG
@@ -443,6 +456,10 @@ class OmniViewModel(
             )
         }
 
+        if (listenerGranted) {
+            NotificationHubService.requestRebindIfNeeded(context)
+        }
+
         if (callLogGranted) {
             viewModelScope.launch {
                 callLogRepo.syncSystemCallLogs()
@@ -450,14 +467,9 @@ class OmniViewModel(
         }
     }
 
-    private fun isNotificationListenerPermissionGranted(context: Context): Boolean {
-        val packageName = context.packageName
-        val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
-        return flat?.contains(packageName) == true
-    }
-
     fun seedDemoDataIfEmpty() {
         viewModelScope.launch {
+            if (notificationRepo.getNotificationCount() > 0) return@launch
             val now = System.currentTimeMillis()
             val sampleNotifs = listOf(
                 NotificationEntity(
