@@ -57,6 +57,7 @@ import com.example.ui.components.HeaderBanner
 import com.example.ui.components.NotificationPermissionBanner
 import com.example.ui.components.QuickReplyDialog
 import com.example.ui.components.TimelineCard
+import com.example.ui.components.TonePickerDialog
 import com.example.ui.components.openNotificationListenerSettings
 import com.example.ui.viewmodel.OmniUiState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -85,10 +86,12 @@ fun TimelineScreen(
     onQuickReplyDismiss: () -> Unit,
     onTruecallerClick: (String) -> Unit,
     onProfileSelected: (com.example.data.model.ProfileType) -> Unit,
+    onSetNotificationTone: (UnifiedTimelineItem.NotificationItem, String?, String) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var activeReplyItem by remember { mutableStateOf<UnifiedTimelineItem.NotificationItem?>(null) }
+    var activeToneItem by remember { mutableStateOf<UnifiedTimelineItem.NotificationItem?>(null) }
     val unreadCount = timelineItems.count { !it.isRead }
     val missedCallCount = timelineItems.count {
         it is UnifiedTimelineItem.CallLogItem && it.callType == com.example.data.model.CallType.MISSED
@@ -279,7 +282,8 @@ fun TimelineScreen(
                         onToggleStar = onToggleStar,
                         onDelete = onDelete,
                         onMarkRead = onMarkRead,
-                        onTruecallerClick = onTruecallerClick
+                        onTruecallerClick = onTruecallerClick,
+                        onSetTone = { activeToneItem = it }
                     )
                 }
             }
@@ -301,6 +305,21 @@ fun TimelineScreen(
                 onSendQuickReply(item, text)
                 activeReplyItem = null
                 onQuickReplyDismiss()
+            }
+        )
+    }
+
+    // Per-Notification Tone Picker Modal
+    activeToneItem?.let { item ->
+        TonePickerDialog(
+            targetTitle = "Set Notification Tone",
+            targetSubtitle = "${item.appName} • ${item.title}",
+            initialToneUri = item.customToneUri,
+            initialToneName = item.customToneName ?: "System Default",
+            onDismiss = { activeToneItem = null },
+            onToneSelected = { uri, name ->
+                onSetNotificationTone(item, uri, name)
+                activeToneItem = null
             }
         )
     }

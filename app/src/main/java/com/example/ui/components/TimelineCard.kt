@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Launch
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.filled.Search
@@ -64,6 +67,7 @@ import com.example.data.model.NotificationCategory
 import com.example.data.model.ProfileType
 import com.example.data.model.UnifiedTimelineItem
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TimelineCard(
     item: UnifiedTimelineItem,
@@ -75,6 +79,7 @@ fun TimelineCard(
     onDelete: (UnifiedTimelineItem) -> Unit,
     onMarkRead: (UnifiedTimelineItem) -> Unit,
     onTruecallerClick: (String) -> Unit,
+    onSetTone: (UnifiedTimelineItem.NotificationItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var expandedMenu by remember { mutableStateOf(false) }
@@ -140,30 +145,39 @@ fun TimelineCard(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // Action buttons
-                    Row(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        if (item.canReply || item.category == NotificationCategory.WHATSAPP || item.category == NotificationCategory.MESSAGES) {
-                            AssistChip(
-                                onClick = { onQuickReply(item) },
-                                label = { Text("Quick Reply", fontSize = 12.sp) },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Reply,
-                                        contentDescription = "Reply",
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = Color(0xFF25D366).copy(alpha = 0.15f),
-                                    labelColor = Color(0xFF128C7E)
-                                ),
-                                modifier = Modifier.testTag("quick_reply_chip_${item.dbId}")
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
+                        val replyContainerColor = if (item.canReply) {
+                            Color(0xFF25D366).copy(alpha = 0.18f)
+                        } else {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
                         }
+                        val replyContentColor = if (item.canReply) {
+                            Color(0xFF128C7E)
+                        } else {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        }
+
+                        AssistChip(
+                            onClick = { onQuickReply(item) },
+                            label = { Text("Quick Reply", fontSize = 12.sp, fontWeight = FontWeight.Medium) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Reply,
+                                    contentDescription = "Quick Reply",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = replyContainerColor,
+                                labelColor = replyContentColor,
+                                leadingIconContentColor = replyContentColor
+                            ),
+                            modifier = Modifier.testTag("quick_reply_chip_${item.dbId}")
+                        )
 
                         AssistChip(
                             onClick = { onOpenApp(item.packageName) },
@@ -178,41 +192,70 @@ fun TimelineCard(
                             modifier = Modifier.testTag("open_app_chip_${item.dbId}")
                         )
 
-                        IconButton(
-                            onClick = { onToggleStar(item) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (item.isStarred) Icons.Default.Star else Icons.Default.StarBorder,
-                                contentDescription = "Star",
-                                tint = if (item.isStarred) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        Box {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
-                                onClick = { expandedMenu = true },
-                                modifier = Modifier.size(36.dp)
+                                onClick = { onSetTone(item) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("set_tone_btn_${item.dbId}")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "More"
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = expandedMenu,
-                                onDismissRequest = { expandedMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Delete") },
-                                    onClick = {
-                                        expandedMenu = false
-                                        onDelete(item)
-                                    },
-                                    leadingIcon = {
-                                        Icon(Icons.Default.Delete, contentDescription = null)
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = "Set notification tone",
+                                    tint = if (!item.customToneName.isNullOrBlank() && item.customToneName != "System Default") {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
                                     }
                                 )
+                            }
+
+                            IconButton(
+                                onClick = { onToggleStar(item) },
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (item.isStarred) Icons.Default.Star else Icons.Default.StarBorder,
+                                    contentDescription = "Star",
+                                    tint = if (item.isStarred) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Box {
+                                IconButton(
+                                    onClick = { expandedMenu = true },
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "More"
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = expandedMenu,
+                                    onDismissRequest = { expandedMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Set Notification Tone") },
+                                        onClick = {
+                                            expandedMenu = false
+                                            onSetTone(item)
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.MusicNote, contentDescription = null)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Delete") },
+                                        onClick = {
+                                            expandedMenu = false
+                                            onDelete(item)
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Delete, contentDescription = null)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -391,6 +434,35 @@ private fun NotificationHeaderRow(
                         ),
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                     )
+                }
+
+                if (!item.customToneName.isNullOrBlank() && item.customToneName != "System Default") {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(10.dp)
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = item.customToneName,
+                                style = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        }
+                    }
                 }
             }
         }

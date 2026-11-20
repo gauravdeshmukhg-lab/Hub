@@ -22,10 +22,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -37,6 +39,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.ui.components.TonePickerDialog
 import com.example.ui.viewmodel.OmniUiState
 
 @Composable
@@ -58,6 +65,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var activeToneSetting by remember { mutableStateOf<com.example.data.local.NotificationSettingEntity?>(null) }
 
     Column(
         modifier = modifier
@@ -122,7 +130,8 @@ fun SettingsScreen(
                     uiState.notificationSettings.forEach { setting ->
                         NotificationSettingItem(
                             setting = setting,
-                            onUpdate = onUpdateSetting
+                            onUpdate = onUpdateSetting,
+                            onPickTone = { activeToneSetting = setting }
                         )
                     }
                 }
@@ -334,12 +343,34 @@ fun SettingsScreen(
             }
         }
     }
+
+    activeToneSetting?.let { setting ->
+        TonePickerDialog(
+            targetTitle = "App Notification Tone",
+            targetSubtitle = setting.appName,
+            initialToneUri = setting.customToneUri,
+            initialToneName = setting.customToneName,
+            onDismiss = { activeToneSetting = null },
+            onToneSelected = { uri, name ->
+                val isSilentTone = uri == com.example.util.NotificationTonePlayer.URI_SILENT
+                onUpdateSetting(
+                    setting.copy(
+                        customToneUri = uri,
+                        customToneName = name,
+                        isSilent = isSilentTone
+                    )
+                )
+                activeToneSetting = null
+            }
+        )
+    }
 }
 
 @Composable
 private fun NotificationSettingItem(
     setting: com.example.data.local.NotificationSettingEntity,
-    onUpdate: (com.example.data.local.NotificationSettingEntity) -> Unit
+    onUpdate: (com.example.data.local.NotificationSettingEntity) -> Unit,
+    onPickTone: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -350,25 +381,31 @@ private fun NotificationSettingItem(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(
-                text = setting.appName,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f)
-            )
-            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = setting.appName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = if (setting.isSilent) "Muted" else "Tone: ${setting.customToneName}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
             androidx.compose.material3.Switch(
                 checked = !setting.isSilent,
-                onCheckedChange = { onUpdate(setting.copy(isSilent = !it)) },
-                modifier = Modifier.size(32.dp)
+                onCheckedChange = { onUpdate(setting.copy(isSilent = !it)) }
             )
         }
-        
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             com.example.data.model.ProfileType.entries.filter { it != com.example.data.model.ProfileType.ALL }.forEach { profile ->
                 androidx.compose.material3.FilterChip(
@@ -378,10 +415,44 @@ private fun NotificationSettingItem(
                     shape = RoundedCornerShape(16.dp)
                 )
             }
+
+            androidx.compose.material3.FilterChip(
+                selected = setting.isVibrate,
+                onClick = { onUpdate(setting.copy(isVibrate = !setting.isVibrate)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Vibration,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                },
+                label = { Text("Vibrate", style = MaterialTheme.typography.labelSmall) },
+                shape = RoundedCornerShape(16.dp)
+            )
         }
-        
+
+        OutlinedButton(
+            onClick = onPickTone,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp)
+                .testTag("app_tone_btn_${setting.packageName}")
+        ) {
+            Icon(
+                imageVector = Icons.Default.MusicNote,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Tone: ${setting.customToneName}",
+                style = MaterialTheme.typography.labelMedium
+            )
+        }
+
         androidx.compose.material3.HorizontalDivider(
-            modifier = Modifier.padding(top = 8.dp),
+            modifier = Modifier.padding(top = 10.dp),
             thickness = 0.5.dp,
             color = MaterialTheme.colorScheme.outlineVariant
         )

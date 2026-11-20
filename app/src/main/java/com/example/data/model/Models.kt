@@ -65,6 +65,8 @@ sealed class UnifiedTimelineItem {
         val category: NotificationCategory,
         val group: NotificationCategory,
         val profileType: ProfileType, // Added for Work/Personal separation
+        val customToneUri: String? = null,
+        val customToneName: String? = null,
         override val isRead: Boolean,
         val isStarred: Boolean,
         val rawPostTime: Long

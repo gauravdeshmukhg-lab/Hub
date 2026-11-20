@@ -6,8 +6,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [NotificationEntity::class, CallLogEntity::class, PinnedAppEntity::class, NotificationSettingEntity::class],
-    version = 3,
+    entities = [
+        NotificationEntity::class,
+        CallLogEntity::class,
+        PinnedAppEntity::class,
+        NotificationSettingEntity::class,
+        SenderToneRuleEntity::class
+    ],
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -15,6 +21,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun callLogDao(): CallLogDao
     abstract fun pinnedAppDao(): PinnedAppDao
     abstract fun notificationSettingDao(): NotificationSettingDao
+    abstract fun senderToneRuleDao(): SenderToneRuleDao
 
     companion object {
         @Volatile

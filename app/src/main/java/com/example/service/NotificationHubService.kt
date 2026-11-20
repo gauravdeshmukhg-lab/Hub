@@ -19,6 +19,7 @@ import com.example.data.local.NotificationEntity
 import com.example.data.local.NotificationSettingEntity
 import com.example.data.model.NotificationCategory
 import com.example.data.model.NotificationEvent
+import com.example.util.NotificationTonePlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -57,14 +58,33 @@ class NotificationHubService : NotificationListenerService() {
 
         private val replyActions = ConcurrentHashMap<String, ReplyCapability>()
 
-        fun canReply(notificationKey: String?): Boolean {
-            if (notificationKey.isNullOrBlank()) return false
-            return replyActions.containsKey(notificationKey)
+        private fun fallbackKey(packageName: String, title: String): String = "${packageName}|${title.trim()}"
+
+        fun canReply(notificationKey: String?, packageName: String? = null, title: String? = null): Boolean {
+            if (!notificationKey.isNullOrBlank() && replyActions.containsKey(notificationKey)) {
+                return true
+            }
+            if (!packageName.isNullOrBlank() && !title.isNullOrBlank()) {
+                return replyActions.containsKey(fallbackKey(packageName, title))
+            }
+            return false
         }
 
-        fun sendInlineReply(context: Context, notificationKey: String?, replyText: String): Boolean {
-            if (notificationKey.isNullOrBlank() || replyText.isBlank()) return false
-            val capability = replyActions[notificationKey] ?: return false
+        fun sendInlineReply(
+            context: Context,
+            notificationKey: String?,
+            replyText: String,
+            packageName: String? = null,
+            title: String? = null
+        ): Boolean {
+            if (replyText.isBlank()) return false
+            val capability = (!notificationKey.isNullOrBlank()).let { hasKey ->
+                if (hasKey) replyActions[notificationKey] else null
+            } ?: if (!packageName.isNullOrBlank() && !title.isNullOrBlank()) {
+                replyActions[fallbackKey(packageName, title)]
+            } else {
+                null
+            } ?: return false
 
             return try {
                 val fillInIntent = Intent()
@@ -110,7 +130,7 @@ class NotificationHubService : NotificationListenerService() {
         try {
             val active = activeNotifications ?: return
             active.forEach { sbn ->
-                processStatusBarNotification(sbn)
+                processStatusBarNotification(sbn, playSound = false)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error syncing active notifications on connect", e)
@@ -139,7 +159,7 @@ class NotificationHubService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
         sbn ?: return
-        processStatusBarNotification(sbn)
+        processStatusBarNotification(sbn, playSound = true)
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
@@ -152,7 +172,7 @@ class NotificationHubService : NotificationListenerService() {
         Log.d(TAG, "Notification removed: ${sbn.packageName}")
     }
 
-    private fun processStatusBarNotification(sbn: StatusBarNotification) {
+    private fun processStatusBarNotification(sbn: StatusBarNotification, playSound: Boolean) {
         try {
             val packageName = sbn.packageName ?: return
             // Ignore self notifications to prevent feedback loops
@@ -192,9 +212,14 @@ class NotificationHubService : NotificationListenerService() {
             val notifKey = sbn.key ?: "${packageName}_${sbn.id}_${sbn.postTime}"
 
             // Cache inline RemoteInput reply capability if exposed by the source app
+            val fbKey = if (title.isNotBlank()) fallbackKey(packageName, title) else null
             extractReplyCapability(notification)?.let { capability ->
                 replyActions[notifKey] = capability
-            } ?: replyActions.remove(notifKey)
+                if (fbKey != null) replyActions[fbKey] = capability
+            } ?: run {
+                replyActions.remove(notifKey)
+                if (fbKey != null) replyActions.remove(fbKey)
+            }
 
             val isWorkUser = sbn.user != Process.myUserHandle()
 
@@ -202,6 +227,7 @@ class NotificationHubService : NotificationListenerService() {
                 val db = AppDatabase.getDatabase(applicationContext)
                 val settingsDao = db.notificationSettingDao()
                 val notificationDao = db.notificationDao()
+                val senderToneRuleDao = db.senderToneRuleDao()
 
                 // Check or create per-app setting
                 var setting = settingsDao.getSettingForApp(packageName)
@@ -214,22 +240,30 @@ class NotificationHubService : NotificationListenerService() {
                     settingsDao.updateSetting(setting)
                 }
 
+                val resolvedTitle = title.ifBlank { appName }
+                val senderRule = senderToneRuleDao.getRule("${packageName}|${resolvedTitle.trim()}")
+                val resolvedToneUri = senderRule?.toneUri ?: setting.customToneUri
+                val resolvedToneName = senderRule?.toneName ?: setting.customToneName
+
                 val resolvedProfile = if (isWorkUser) "WORK" else setting.profileName
 
                 // Deduplicate / update existing notification with the same system key
                 val existing = notificationDao.getNotificationByKey(notifKey)
+                val isNewOrUpdatedTimestamp = existing == null || existing.timestamp != sbn.postTime
                 if (existing != null) {
-                    if (existing.title == title && existing.text == text && existing.timestamp == sbn.postTime) {
+                    if (existing.title == resolvedTitle && existing.text == text && existing.timestamp == sbn.postTime) {
                         return@launch
                     }
                     val updated = existing.copy(
                         appName = appName,
-                        title = title.ifBlank { appName },
+                        title = resolvedTitle,
                         text = text,
                         subText = subText,
                         timestamp = sbn.postTime,
                         categoryName = category.name,
                         profileName = resolvedProfile,
+                        customToneUri = resolvedToneUri,
+                        customToneName = resolvedToneName,
                         isRead = setting.isSilent
                     )
                     notificationDao.updateNotification(updated)
@@ -238,16 +272,28 @@ class NotificationHubService : NotificationListenerService() {
                         notificationKey = notifKey,
                         packageName = packageName,
                         appName = appName,
-                        title = title.ifBlank { appName },
+                        title = resolvedTitle,
                         text = text,
                         subText = subText,
                         timestamp = sbn.postTime,
                         categoryName = category.name,
                         profileName = resolvedProfile,
+                        customToneUri = resolvedToneUri,
+                        customToneName = resolvedToneName,
                         isRead = setting.isSilent,
                         isStarred = false
                     )
                     notificationDao.insertNotification(entity)
+                }
+
+                // Play configured custom tone for new/updated notifications if app isn't muted
+                if (playSound &&
+                    isNewOrUpdatedTimestamp &&
+                    !setting.isSilent &&
+                    !resolvedToneUri.isNullOrBlank() &&
+                    resolvedToneUri != NotificationTonePlayer.URI_SILENT
+                ) {
+                    NotificationTonePlayer.playTone(applicationContext, resolvedToneUri)
                 }
 
                 val event = NotificationEvent(

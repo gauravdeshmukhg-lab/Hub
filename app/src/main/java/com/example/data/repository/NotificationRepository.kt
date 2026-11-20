@@ -7,7 +7,8 @@ import kotlinx.coroutines.flow.Flow
 
 class NotificationRepository(
     private val dao: NotificationDao,
-    private val settingsDao: com.example.data.local.NotificationSettingDao
+    private val settingsDao: com.example.data.local.NotificationSettingDao,
+    private val senderToneRuleDao: com.example.data.local.SenderToneRuleDao
 ) {
 
     val allNotifications: Flow<List<NotificationEntity>> = dao.getAllNotifications()
@@ -21,11 +22,31 @@ class NotificationRepository(
         }
     }
 
+    suspend fun getSettingCount(): Int = settingsDao.getSettingCount()
+
     suspend fun getSettingForApp(packageName: String) = settingsDao.getSettingForApp(packageName)
 
     suspend fun updateSetting(setting: com.example.data.local.NotificationSettingEntity) = settingsDao.updateSetting(setting)
 
+    suspend fun insertAllSettings(settings: List<com.example.data.local.NotificationSettingEntity>) = settingsDao.insertAllSettings(settings)
+
     suspend fun deleteSetting(packageName: String) = settingsDao.deleteSetting(packageName)
+
+    suspend fun updateNotificationTone(id: Long, toneUri: String?, toneName: String?) =
+        dao.updateNotificationTone(id, toneUri, toneName)
+
+    suspend fun upsertSenderToneRule(packageName: String, senderTitle: String, toneUri: String?, toneName: String) {
+        val key = "${packageName}|${senderTitle.trim()}"
+        senderToneRuleDao.upsertRule(
+            com.example.data.local.SenderToneRuleEntity(
+                ruleKey = key,
+                packageName = packageName,
+                senderTitle = senderTitle.trim(),
+                toneUri = toneUri,
+                toneName = toneName
+            )
+        )
+    }
 
     suspend fun getNotificationCount(): Int = dao.getNotificationCount()
 
@@ -34,6 +55,8 @@ class NotificationRepository(
     suspend fun insertAll(notifications: List<NotificationEntity>) = dao.insertAll(notifications)
 
     suspend fun markAsRead(id: Long) = dao.markAsRead(id)
+
+    suspend fun markAsReplied(id: Long, replySummary: String) = dao.markAsReplied(id, replySummary)
 
     suspend fun markAllAsRead() = dao.markAllAsRead()
 

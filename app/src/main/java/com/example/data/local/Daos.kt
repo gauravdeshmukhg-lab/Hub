@@ -33,11 +33,17 @@ interface NotificationDao {
     @Query("UPDATE notifications SET isRead = 1 WHERE id = :id")
     suspend fun markAsRead(id: Long)
 
+    @Query("UPDATE notifications SET isRead = 1, subText = :replySummary WHERE id = :id")
+    suspend fun markAsReplied(id: Long, replySummary: String)
+
     @Query("UPDATE notifications SET isRead = 1")
     suspend fun markAllAsRead()
 
     @Query("UPDATE notifications SET isStarred = NOT isStarred WHERE id = :id")
     suspend fun toggleStarred(id: Long)
+
+    @Query("UPDATE notifications SET customToneUri = :toneUri, customToneName = :toneName WHERE id = :id")
+    suspend fun updateNotificationTone(id: Long, toneUri: String?, toneName: String?)
 
     @Query("DELETE FROM notifications WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -48,8 +54,11 @@ interface NotificationDao {
 
 @Dao
 interface NotificationSettingDao {
-    @Query("SELECT * FROM notification_settings")
+    @Query("SELECT * FROM notification_settings ORDER BY appName ASC")
     fun getAllSettings(): Flow<List<NotificationSettingEntity>>
+
+    @Query("SELECT COUNT(*) FROM notification_settings")
+    suspend fun getSettingCount(): Int
 
     @Query("SELECT * FROM notification_settings WHERE packageName = :packageName")
     suspend fun getSettingForApp(packageName: String): NotificationSettingEntity?
@@ -57,8 +66,20 @@ interface NotificationSettingDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun updateSetting(setting: NotificationSettingEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllSettings(settings: List<NotificationSettingEntity>)
+
     @Query("DELETE FROM notification_settings WHERE packageName = :packageName")
     suspend fun deleteSetting(packageName: String)
+}
+
+@Dao
+interface SenderToneRuleDao {
+    @Query("SELECT * FROM sender_tone_rules WHERE ruleKey = :ruleKey LIMIT 1")
+    suspend fun getRule(ruleKey: String): SenderToneRuleEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRule(rule: SenderToneRuleEntity)
 }
 
 @Dao

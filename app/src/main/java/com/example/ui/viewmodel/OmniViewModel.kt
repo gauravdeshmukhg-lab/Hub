@@ -161,11 +161,15 @@ class OmniViewModel(
                 ProfileType.PERSONAL
             }
 
+            val appSetting = state.notificationSettings.firstOrNull { it.packageName == entity.packageName }
+            val resolvedToneUri = entity.customToneUri ?: appSetting?.customToneUri
+            val resolvedToneName = entity.customToneName ?: appSetting?.customToneName
+
             UnifiedTimelineItem.NotificationItem(
                 id = "NOTIF_${entity.id}",
                 dbId = entity.id,
                 notificationKey = entity.notificationKey,
-                canReply = NotificationHubService.canReply(entity.notificationKey),
+                canReply = NotificationHubService.canReply(entity.notificationKey, entity.packageName, entity.title),
                 packageName = entity.packageName,
                 appName = entity.appName,
                 title = entity.title,
@@ -175,6 +179,8 @@ class OmniViewModel(
                 category = cat,
                 group = group,
                 profileType = profile,
+                customToneUri = resolvedToneUri,
+                customToneName = resolvedToneName,
                 isRead = entity.isRead,
                 isStarred = entity.isStarred,
                 rawPostTime = entity.timestamp
@@ -287,9 +293,82 @@ class OmniViewModel(
         }
     }
 
+    fun setToneForNotification(
+        item: UnifiedTimelineItem.NotificationItem,
+        toneUri: String?,
+        toneName: String
+    ) {
+        viewModelScope.launch {
+            notificationRepo.updateNotificationTone(item.dbId, toneUri, toneName)
+            notificationRepo.upsertSenderToneRule(item.packageName, item.title, toneUri, toneName)
+        }
+    }
+
+    fun setToneForApp(
+        setting: com.example.data.local.NotificationSettingEntity,
+        toneUri: String?,
+        toneName: String
+    ) {
+        viewModelScope.launch {
+            val isSilentTone = toneUri == com.example.util.NotificationTonePlayer.URI_SILENT
+            notificationRepo.updateSetting(
+                setting.copy(
+                    customToneUri = toneUri,
+                    customToneName = toneName,
+                    isSilent = isSilentTone
+                )
+            )
+        }
+    }
+
     init {
         loadInstalledApps()
         seedDemoDataIfEmpty()
+        seedDefaultAppSettingsIfEmpty()
+    }
+
+    private fun seedDefaultAppSettingsIfEmpty() {
+        viewModelScope.launch {
+            if (notificationRepo.getSettingCount() > 0) return@launch
+            val defaults = listOf(
+                com.example.data.local.NotificationSettingEntity(
+                    packageName = "com.whatsapp",
+                    appName = "WhatsApp",
+                    profileName = "PERSONAL",
+                    customToneUri = com.example.util.NotificationTonePlayer.URI_CHIME,
+                    customToneName = "Crystal Chime"
+                ),
+                com.example.data.local.NotificationSettingEntity(
+                    packageName = "com.google.android.gm",
+                    appName = "Gmail",
+                    profileName = "WORK",
+                    customToneUri = com.example.util.NotificationTonePlayer.URI_WORK,
+                    customToneName = "Work Chime"
+                ),
+                com.example.data.local.NotificationSettingEntity(
+                    packageName = "com.google.android.apps.messaging",
+                    appName = "Messages",
+                    profileName = "PERSONAL",
+                    customToneUri = com.example.util.NotificationTonePlayer.URI_PING,
+                    customToneName = "Quick Ping"
+                ),
+                com.example.data.local.NotificationSettingEntity(
+                    packageName = "com.instagram.android",
+                    appName = "Instagram",
+                    profileName = "PERSONAL",
+                    customToneUri = null,
+                    customToneName = "System Default"
+                ),
+                com.example.data.local.NotificationSettingEntity(
+                    packageName = "com.microsoft.teams",
+                    appName = "Teams",
+                    profileName = "WORK",
+                    customToneUri = com.example.util.NotificationTonePlayer.URI_BELL,
+                    customToneName = "Classic Bell"
+                )
+            )
+            notificationRepo.insertAllSettings(defaults)
+        }
     }
 
     fun loadInstalledApps() {
@@ -431,8 +510,16 @@ class OmniViewModel(
         item: UnifiedTimelineItem.NotificationItem,
         message: String
     ): Boolean {
-        val sentLive = NotificationHubService.sendInlineReply(context, item.notificationKey, message)
-        markAsRead(item)
+        val sentLive = NotificationHubService.sendInlineReply(
+            context = context,
+            notificationKey = item.notificationKey,
+            replyText = message,
+            packageName = item.packageName,
+            title = item.title
+        )
+        viewModelScope.launch {
+            notificationRepo.markAsReplied(item.dbId, "You replied: $message")
+        }
         return sentLive
     }
 

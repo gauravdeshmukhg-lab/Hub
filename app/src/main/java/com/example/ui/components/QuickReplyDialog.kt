@@ -79,6 +79,17 @@ fun QuickReplyDialog(
         text = {
             Column {
                 Text(
+                    text = if (item.canReply) {
+                        "Direct inline reply active — sends without opening ${item.appName}"
+                    } else {
+                        "Quick response for ${item.appName}"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+
+                Text(
                     text = "\"${item.text}\"",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

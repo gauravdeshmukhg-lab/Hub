@@ -15,6 +15,8 @@ data class NotificationEntity(
     val timestamp: Long = System.currentTimeMillis(),
     val categoryName: String, // "WHATSAPP", "CALLS", "EMAIL", "MESSAGES", "SOCIAL", "SYSTEM"
     val profileName: String = "PERSONAL", // "PERSONAL", "WORK"
+    val customToneUri: String? = null,
+    val customToneName: String? = null,
     val isRead: Boolean = false,
     val isStarred: Boolean = false
 )
@@ -26,7 +28,18 @@ data class NotificationSettingEntity(
     val isSilent: Boolean = false,
     val isVibrate: Boolean = true,
     val priority: Int = 1, // 0: Low, 1: Normal, 2: High
-    val profileName: String = "PERSONAL"
+    val profileName: String = "PERSONAL",
+    val customToneUri: String? = null,
+    val customToneName: String = "System Default"
+)
+
+@Entity(tableName = "sender_tone_rules")
+data class SenderToneRuleEntity(
+    @PrimaryKey val ruleKey: String, // "$packageName|$senderTitle"
+    val packageName: String,
+    val senderTitle: String,
+    val toneUri: String? = null,
+    val toneName: String = "System Default"
 )
 
 @Entity(tableName = "call_logs")

@@ -228,9 +228,9 @@ fun OmniAppContent(viewModel: OmniViewModel) {
                     onSendQuickReply = { item, msg ->
                         val sentLive = viewModel.sendQuickReply(context, item, msg)
                         val toastMsg = if (sentLive) {
-                            "Reply sent to ${item.title} via ${item.appName}"
+                            "Reply sent directly to ${item.title} via ${item.appName}"
                         } else {
-                            "Reply saved for ${item.title} (open ${item.appName} to send)"
+                            "Quick reply recorded for ${item.title}"
                         }
                         Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                     },
@@ -247,6 +247,10 @@ fun OmniAppContent(viewModel: OmniViewModel) {
                     },
                     onProfileSelected = { prof ->
                         viewModel.setSelectedProfile(prof)
+                    },
+                    onSetNotificationTone = { item, uri, name ->
+                        viewModel.setToneForNotification(item, uri, name)
+                        Toast.makeText(context, "Tone \"$name\" set for ${item.title}", Toast.LENGTH_SHORT).show()
                     }
                 )
 
