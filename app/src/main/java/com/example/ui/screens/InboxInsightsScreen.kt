@@ -44,12 +44,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.DailyDigestState
 import com.example.data.model.NotificationCategory
 import com.example.data.model.UnifiedTimelineItem
+import com.example.ui.components.DailyDigestCard
 
 @Composable
 fun InboxInsightsScreen(
     timelineItems: List<UnifiedTimelineItem>,
+    digestState: DailyDigestState = DailyDigestState.Idle,
+    onGenerateDigest: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var quietMode by remember { mutableStateOf(false) }
@@ -100,6 +104,14 @@ fun InboxInsightsScreen(
                 )
             }
         }
+
+        // Daily Digest Morning Briefing Card (Gemini API)
+        DailyDigestCard(
+            digestState = digestState,
+            onGenerateDigest = onGenerateDigest
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Summary Metric Grid
         Row(

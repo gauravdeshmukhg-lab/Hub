@@ -20,6 +20,13 @@ enum class ProfileType(val label: String) {
     WORK("Work")
 }
 
+enum class FeedTypeFilter(val label: String) {
+    CALLS("Calls"),
+    MESSAGES("Messages"),
+    EMAILS("Emails"),
+    SYSTEM("System")
+}
+
 enum class CallType(val label: String) {
     INCOMING("Incoming"),
     OUTGOING("Outgoing"),
@@ -69,6 +76,7 @@ sealed class UnifiedTimelineItem {
         val customToneName: String? = null,
         override val isRead: Boolean,
         val isStarred: Boolean,
+        val isPinned: Boolean = false,
         val rawPostTime: Long
     ) : UnifiedTimelineItem()
 
@@ -85,4 +93,21 @@ sealed class UnifiedTimelineItem {
         override val title: String
             get() = contactName ?: phoneNumber
     }
+}
+
+data class DailyDigestReport(
+    val headline: String,
+    val morningBriefing: String,
+    val topNotifications: List<String>,
+    val priorityEmails: List<String>,
+    val actionItems: List<String>,
+    val itemCountAnalyzed: Int,
+    val generatedAt: Long = System.currentTimeMillis()
+)
+
+sealed interface DailyDigestState {
+    data object Idle : DailyDigestState
+    data object Loading : DailyDigestState
+    data class Success(val report: DailyDigestReport) : DailyDigestState
+    data class Error(val message: String) : DailyDigestState
 }

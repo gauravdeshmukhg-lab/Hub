@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Home
@@ -62,6 +63,7 @@ fun SettingsScreen(
     onThemeModeSelected: (com.example.data.local.ThemeMode) -> Unit,
     onRequestDefaultDialer: () -> Unit,
     onUpdateSetting: (com.example.data.local.NotificationSettingEntity) -> Unit,
+    onFocusModeChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -98,6 +100,73 @@ fun SettingsScreen(
                 )
             }
         }
+
+        // Focus Mode Card
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (uiState.isFocusModeEnabled) {
+                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.65f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                }
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CenterFocusStrong,
+                        contentDescription = null,
+                        tint = if (uiState.isFocusModeEnabled) {
+                            MaterialTheme.colorScheme.tertiary
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Focus Mode",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (uiState.isFocusModeEnabled) {
+                                "Active — Non-urgent notifications suppressed"
+                            } else {
+                                "Suppress non-urgent notifications in the feed"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (uiState.isFocusModeEnabled) {
+                                MaterialTheme.colorScheme.onTertiaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = uiState.isFocusModeEnabled,
+                        onCheckedChange = onFocusModeChanged,
+                        modifier = Modifier.testTag("focus_mode_switch")
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "When enabled, only Urgent notifications (OTP, verification, security, emergency, and alert keywords) appear in your feed and play tones.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Notification Management (Per-App)
         Card(

@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import android.text.format.DateUtils
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -34,9 +35,11 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PriorityHigh
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
@@ -80,6 +83,7 @@ fun TimelineCard(
     onMarkRead: (UnifiedTimelineItem) -> Unit,
     onTruecallerClick: (String) -> Unit,
     onSetTone: (UnifiedTimelineItem.NotificationItem) -> Unit = {},
+    onTogglePin: (UnifiedTimelineItem.NotificationItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var expandedMenu by remember { mutableStateOf(false) }
@@ -89,10 +93,16 @@ fun TimelineCard(
         DateUtils.MINUTE_IN_MILLIS
     ).toString()
 
-    val cardColor = if (!item.isRead) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+    val isPinnedNotif = item is UnifiedTimelineItem.NotificationItem && item.isPinned
+    val cardColor = when {
+        isPinnedNotif -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.36f)
+        !item.isRead -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    }
+    val cardBorder = if (isPinnedNotif) {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        null
     }
 
     Card(
@@ -101,6 +111,7 @@ fun TimelineCard(
             .padding(vertical = 4.dp, horizontal = 12.dp)
             .clickable { onMarkRead(item) },
         shape = RoundedCornerShape(16.dp),
+        border = cardBorder,
         colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -194,6 +205,19 @@ fun TimelineCard(
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
+                                onClick = { onTogglePin(item) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("pin_notif_btn_${item.dbId}")
+                            ) {
+                                Icon(
+                                    imageVector = if (item.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                    contentDescription = if (item.isPinned) "Unpin thread from top" else "Pin thread to top",
+                                    tint = if (item.isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            IconButton(
                                 onClick = { onSetTone(item) },
                                 modifier = Modifier
                                     .size(48.dp)
@@ -235,6 +259,19 @@ fun TimelineCard(
                                     expanded = expandedMenu,
                                     onDismissRequest = { expandedMenu = false }
                                 ) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (item.isPinned) "Unpin from Top" else "Pin Thread to Top") },
+                                        onClick = {
+                                            expandedMenu = false
+                                            onTogglePin(item)
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = if (item.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    )
                                     DropdownMenuItem(
                                         text = { Text("Set Notification Tone") },
                                         onClick = {
@@ -434,6 +471,35 @@ private fun NotificationHeaderRow(
                         ),
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                     )
+                }
+
+                if (item.isPinned) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PushPin,
+                                contentDescription = "Pinned",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(10.dp)
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = "PINNED",
+                                style = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        }
+                    }
                 }
 
                 if (!item.customToneName.isNullOrBlank() && item.customToneName != "System Default") {

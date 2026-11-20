@@ -42,6 +42,9 @@ interface NotificationDao {
     @Query("UPDATE notifications SET isStarred = NOT isStarred WHERE id = :id")
     suspend fun toggleStarred(id: Long)
 
+    @Query("UPDATE notifications SET isPinned = :isPinned WHERE packageName = :packageName AND LOWER(TRIM(title)) = LOWER(TRIM(:title))")
+    suspend fun setPinnedForThread(packageName: String, title: String, isPinned: Boolean)
+
     @Query("UPDATE notifications SET customToneUri = :toneUri, customToneName = :toneName WHERE id = :id")
     suspend fun updateNotificationTone(id: Long, toneUri: String?, toneName: String?)
 
@@ -80,6 +83,21 @@ interface SenderToneRuleDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertRule(rule: SenderToneRuleEntity)
+}
+
+@Dao
+interface PinnedThreadDao {
+    @Query("SELECT * FROM pinned_threads ORDER BY pinnedAt DESC")
+    fun getAllPinnedThreads(): Flow<List<PinnedThreadEntity>>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM pinned_threads WHERE threadKey = :threadKey)")
+    suspend fun isThreadPinned(threadKey: String): Boolean
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun pinThread(thread: PinnedThreadEntity)
+
+    @Query("DELETE FROM pinned_threads WHERE threadKey = :threadKey")
+    suspend fun unpinThread(threadKey: String)
 }
 
 @Dao

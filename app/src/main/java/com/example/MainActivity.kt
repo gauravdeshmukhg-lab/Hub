@@ -251,6 +251,29 @@ fun OmniAppContent(viewModel: OmniViewModel) {
                     onSetNotificationTone = { item, uri, name ->
                         viewModel.setToneForNotification(item, uri, name)
                         Toast.makeText(context, "Tone \"$name\" set for ${item.title}", Toast.LENGTH_SHORT).show()
+                    },
+                    onToggleFeedType = { feedType ->
+                        viewModel.toggleFeedType(feedType)
+                    },
+                    onResetFeedFilters = {
+                        viewModel.resetFeedTypeFilters()
+                    },
+                    onDisableFocusMode = {
+                        viewModel.setFocusModeEnabled(false)
+                        Toast.makeText(context, "Focus Mode turned off", Toast.LENGTH_SHORT).show()
+                    },
+                    onGenerateDigest = {
+                        viewModel.generateDailyDigest()
+                    },
+                    onTogglePin = { item ->
+                        val wasPinned = item.isPinned
+                        viewModel.togglePinned(item)
+                        val msg = if (wasPinned) {
+                            "Unpinned ${item.title}"
+                        } else {
+                            "Pinned ${item.title} to top of feed"
+                        }
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 )
 
@@ -277,7 +300,9 @@ fun OmniAppContent(viewModel: OmniViewModel) {
                 )
 
                 3 -> InboxInsightsScreen(
-                    timelineItems = timelineItems
+                    timelineItems = timelineItems,
+                    digestState = uiState.dailyDigestState,
+                    onGenerateDigest = { viewModel.generateDailyDigest() }
                 )
 
                 4 -> SettingsScreen(
@@ -307,6 +332,9 @@ fun OmniAppContent(viewModel: OmniViewModel) {
                     },
                     onUpdateSetting = { setting ->
                         viewModel.updateNotificationSetting(setting)
+                    },
+                    onFocusModeChanged = { enabled ->
+                        viewModel.setFocusModeEnabled(enabled)
                     }
                 )
             }

@@ -8,11 +8,13 @@ import kotlinx.coroutines.flow.Flow
 class NotificationRepository(
     private val dao: NotificationDao,
     private val settingsDao: com.example.data.local.NotificationSettingDao,
-    private val senderToneRuleDao: com.example.data.local.SenderToneRuleDao
+    private val senderToneRuleDao: com.example.data.local.SenderToneRuleDao,
+    private val pinnedThreadDao: com.example.data.local.PinnedThreadDao
 ) {
 
     val allNotifications: Flow<List<NotificationEntity>> = dao.getAllNotifications()
     val allSettings: Flow<List<com.example.data.local.NotificationSettingEntity>> = settingsDao.getAllSettings()
+    val allPinnedThreads: Flow<List<com.example.data.local.PinnedThreadEntity>> = pinnedThreadDao.getAllPinnedThreads()
 
     fun getNotificationsByCategory(category: NotificationCategory): Flow<List<NotificationEntity>> {
         return if (category == NotificationCategory.ALL) {
@@ -61,6 +63,24 @@ class NotificationRepository(
     suspend fun markAllAsRead() = dao.markAllAsRead()
 
     suspend fun toggleStarred(id: Long) = dao.toggleStarred(id)
+
+    suspend fun togglePinThread(packageName: String, title: String, currentlyPinned: Boolean) {
+        val normalizedTitle = title.trim()
+        val key = "${packageName}|${normalizedTitle.lowercase()}"
+        if (currentlyPinned) {
+            pinnedThreadDao.unpinThread(key)
+            dao.setPinnedForThread(packageName, normalizedTitle, false)
+        } else {
+            pinnedThreadDao.pinThread(
+                com.example.data.local.PinnedThreadEntity(
+                    threadKey = key,
+                    packageName = packageName,
+                    title = normalizedTitle
+                )
+            )
+            dao.setPinnedForThread(packageName, normalizedTitle, true)
+        }
+    }
 
     suspend fun deleteById(id: Long) = dao.deleteById(id)
 

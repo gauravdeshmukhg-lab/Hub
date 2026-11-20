@@ -11,8 +11,12 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.CallLogEntity
 import com.example.data.local.NotificationEntity
+import android.text.format.DateUtils
 import com.example.data.model.AppCategory
 import com.example.data.model.CallType
+import com.example.data.model.DailyDigestReport
+import com.example.data.model.DailyDigestState
+import com.example.data.model.FeedTypeFilter
 import com.example.data.model.InstalledAppInfo
 import com.example.data.model.NotificationCategory
 import com.example.data.model.ProfileType
@@ -25,6 +29,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -39,6 +44,8 @@ import android.util.Log
 
 data class OmniUiState(
     val selectedCategory: NotificationCategory = NotificationCategory.ALL,
+    val visibleFeedTypes: Set<FeedTypeFilter> = FeedTypeFilter.entries.toSet(),
+    val isFocusModeEnabled: Boolean = false,
     val selectedProfile: com.example.data.model.ProfileType = com.example.data.model.ProfileType.ALL,
     val searchQuery: String = "",
     val callLogFilter: CallType? = null,
@@ -54,7 +61,8 @@ data class OmniUiState(
     val themeMode: com.example.data.local.ThemeMode = com.example.data.local.ThemeMode.SYSTEM,
     val aiSuggestions: List<String> = emptyList(),
     val isAiLoading: Boolean = false,
-    val aiError: String? = null
+    val aiError: String? = null,
+    val dailyDigestState: DailyDigestState = DailyDigestState.Idle
 )
 
 class OmniViewModel(
@@ -68,9 +76,16 @@ class OmniViewModel(
     val uiState: StateFlow<OmniUiState> = combine(
         _uiState,
         themePrefs.themeMode,
+        themePrefs.visibleFeedTypes,
+        themePrefs.isFocusModeEnabled,
         notificationRepo.allSettings
-    ) { state, theme, settings ->
-        state.copy(themeMode = theme, notificationSettings = settings)
+    ) { state, theme, visibleTypes, focusMode, settings ->
+        state.copy(
+            themeMode = theme,
+            visibleFeedTypes = visibleTypes,
+            isFocusModeEnabled = focusMode,
+            notificationSettings = settings
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -80,6 +95,12 @@ class OmniViewModel(
     fun setThemeMode(mode: com.example.data.local.ThemeMode) {
         viewModelScope.launch {
             themePrefs.setThemeMode(mode)
+        }
+    }
+
+    fun setFocusModeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            themePrefs.setFocusModeEnabled(enabled)
         }
     }
 
@@ -140,13 +161,173 @@ class OmniViewModel(
         _uiState.update { it.copy(aiSuggestions = emptyList(), aiError = null) }
     }
 
+    private val digestSchema = Schema.obj(
+        properties = mapOf(
+            "headline" to Schema.string(description = "A concise 1-line morning headline summarizing the past 24 hours"),
+            "morningBriefing" to Schema.string(description = "A clear 2-3 sentence morning briefing summarizing the main themes and activity"),
+            "topNotifications" to Schema.array(
+                items = Schema.string(description = "A concise bullet summarizing an important notification, message, or missed call"),
+                description = "Up to 5 top notifications or calls from the past 24 hours"
+            ),
+            "priorityEmails" to Schema.array(
+                items = Schema.string(description = "A concise summary of a priority email with sender and key point"),
+                description = "Up to 4 priority emails from the past 24 hours"
+            ),
+            "actionItems" to Schema.array(
+                items = Schema.string(description = "A short suggested follow-up action for the user"),
+                description = "Up to 3 suggested next steps based on unread or urgent updates"
+            )
+        )
+    )
+
+    private val digestModel by lazy {
+        Firebase.ai.generativeModel(
+            modelName = "gemini-3.8-flash",
+            generationConfig = generationConfig {
+                responseMimeType = "application/json"
+                responseSchema = digestSchema
+            }
+        )
+    }
+
+    fun generateDailyDigest() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(dailyDigestState = DailyDigestState.Loading) }
+            try {
+                val now = System.currentTimeMillis()
+                val cutoff = now - (24L * 60L * 60L * 1000L)
+
+                val recentNotifications = notificationRepo.allNotifications.first()
+                    .filter { it.timestamp >= cutoff }
+                    .sortedByDescending { it.timestamp }
+                    .take(40)
+
+                val recentCalls = callLogRepo.allCallLogs.first()
+                    .filter { it.timestamp >= cutoff }
+                    .sortedByDescending { it.timestamp }
+                    .take(15)
+
+                val totalCount = recentNotifications.size + recentCalls.size
+                if (totalCount == 0) {
+                    _uiState.update {
+                        it.copy(
+                            dailyDigestState = DailyDigestState.Error(
+                                "No notifications, emails, or calls found in the past 24 hours."
+                            )
+                        )
+                    }
+                    return@launch
+                }
+
+                val emailLines = recentNotifications
+                    .filter { it.categoryName == NotificationCategory.EMAIL.name }
+                    .joinToString("\n") { entity ->
+                        val age = DateUtils.getRelativeTimeSpanString(entity.timestamp, now, DateUtils.MINUTE_IN_MILLIS)
+                        val groupTag = classifyGroup(entity.title, entity.text, entity.appName).name
+                        val status = buildList {
+                            if (!entity.isRead) add("UNREAD")
+                            if (entity.isStarred) add("STARRED")
+                            add(entity.profileName)
+                            add(groupTag)
+                        }.joinToString(", ")
+                        "- [$status | $age] ${entity.appName} | From: ${entity.title} | ${entity.text}"
+                    }
+                    .ifBlank { "None" }
+
+                val otherNotifLines = recentNotifications
+                    .filter { it.categoryName != NotificationCategory.EMAIL.name }
+                    .joinToString("\n") { entity ->
+                        val age = DateUtils.getRelativeTimeSpanString(entity.timestamp, now, DateUtils.MINUTE_IN_MILLIS)
+                        val groupTag = classifyGroup(entity.title, entity.text, entity.appName).name
+                        val status = buildList {
+                            if (!entity.isRead) add("UNREAD")
+                            if (entity.isStarred) add("STARRED")
+                            add(entity.profileName)
+                            add(groupTag)
+                        }.joinToString(", ")
+                        "- [$status | $age] ${entity.appName} | ${entity.title}: ${entity.text}"
+                    }
+                    .ifBlank { "None" }
+
+                val callLines = recentCalls
+                    .joinToString("\n") { call ->
+                        val age = DateUtils.getRelativeTimeSpanString(call.timestamp, now, DateUtils.MINUTE_IN_MILLIS)
+                        val caller = call.contactName ?: call.phoneNumber
+                        "- [${call.callType} | $age] $caller (${call.phoneNumber})"
+                    }
+                    .ifBlank { "None" }
+
+                val prompt = """
+                    You are creating a concise Daily Digest morning briefing for OmniHub covering the past 24 hours.
+                    Analyze the real user activity below and highlight the most important notifications, urgent alerts, missed calls, and priority emails.
+                    Do not invent any notifications or emails not listed below.
+
+                    PRIORITY EMAILS (past 24h):
+                    $emailLines
+
+                    NOTIFICATIONS & MESSAGES (past 24h):
+                    $otherNotifLines
+
+                    RECENT CALLS (past 24h):
+                    $callLines
+                """.trimIndent()
+
+                val response = withTimeout(60_000L) {
+                    digestModel.generateContent(prompt)
+                }
+
+                val jsonStr = response.text ?: throw IllegalStateException("Empty AI response")
+                val json = org.json.JSONObject(jsonStr)
+
+                fun extractStringList(key: String): List<String> {
+                    val arr = json.optJSONArray(key) ?: return emptyList()
+                    return (0 until arr.length())
+                        .mapNotNull { idx -> arr.optString(idx).takeIf { it.isNotBlank() } }
+                }
+
+                val report = DailyDigestReport(
+                    headline = json.optString("headline").ifBlank { "Your 24-Hour Morning Briefing" },
+                    morningBriefing = json.optString("morningBriefing").ifBlank {
+                        "Analyzed $totalCount recent updates across your notifications, emails, and calls."
+                    },
+                    topNotifications = extractStringList("topNotifications"),
+                    priorityEmails = extractStringList("priorityEmails"),
+                    actionItems = extractStringList("actionItems"),
+                    itemCountAnalyzed = totalCount,
+                    generatedAt = System.currentTimeMillis()
+                )
+
+                _uiState.update { it.copy(dailyDigestState = DailyDigestState.Success(report)) }
+            } catch (e: TimeoutCancellationException) {
+                Log.e("OmniViewModel", "Daily Digest generation timed out", e)
+                _uiState.update {
+                    it.copy(dailyDigestState = DailyDigestState.Error("Daily Digest request timed out. Please try again."))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("OmniViewModel", "Daily Digest generation failed", e)
+                _uiState.update {
+                    it.copy(
+                        dailyDigestState = DailyDigestState.Error(
+                            e.localizedMessage ?: "Failed to generate Daily Digest."
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     private val _installedAppsState = MutableStateFlow<List<InstalledAppInfo>>(emptyList())
 
     val timelineItems: StateFlow<List<UnifiedTimelineItem>> = combine(
         notificationRepo.allNotifications,
         callLogRepo.allCallLogs,
+        notificationRepo.allPinnedThreads,
         uiState
-    ) { notifications, callLogs, state ->
+    ) { notifications, callLogs, pinnedThreads, state ->
+        val pinnedKeys = pinnedThreads.map { it.threadKey }.toSet()
+
         val notifItems = notifications.map { entity ->
             val cat = try {
                 NotificationCategory.valueOf(entity.categoryName)
@@ -164,6 +345,8 @@ class OmniViewModel(
             val appSetting = state.notificationSettings.firstOrNull { it.packageName == entity.packageName }
             val resolvedToneUri = entity.customToneUri ?: appSetting?.customToneUri
             val resolvedToneName = entity.customToneName ?: appSetting?.customToneName
+            val threadKey = "${entity.packageName}|${entity.title.trim().lowercase()}"
+            val pinned = entity.isPinned || pinnedKeys.contains(threadKey)
 
             UnifiedTimelineItem.NotificationItem(
                 id = "NOTIF_${entity.id}",
@@ -183,6 +366,7 @@ class OmniViewModel(
                 customToneName = resolvedToneName,
                 isRead = entity.isRead,
                 isStarred = entity.isStarred,
+                isPinned = pinned,
                 rawPostTime = entity.timestamp
             )
         }
@@ -206,7 +390,11 @@ class OmniViewModel(
             )
         }
 
-        val combined = (notifItems + callItems).sortedByDescending { it.timestamp }
+        val combined = (notifItems + callItems).sortedWith(
+            compareByDescending<UnifiedTimelineItem> {
+                (it as? UnifiedTimelineItem.NotificationItem)?.isPinned == true
+            }.thenByDescending { it.timestamp }
+        )
 
         // Filter by Profile (Personal vs Work)
         val profileFiltered = when (state.selectedProfile) {
@@ -219,31 +407,63 @@ class OmniViewModel(
             }
         }
 
-        // Filter by category
-        val categoryFiltered = when (state.selectedCategory) {
-            NotificationCategory.ALL -> profileFiltered
-            NotificationCategory.WHATSAPP -> profileFiltered.filter {
-                it is UnifiedTimelineItem.NotificationItem && it.category == NotificationCategory.WHATSAPP
+        // Filter by Feed Type visibility toggles (Calls, Messages, Emails, System)
+        val visibilityFiltered = profileFiltered.filter { item ->
+            val feedType = when (item) {
+                is UnifiedTimelineItem.CallLogItem -> FeedTypeFilter.CALLS
+                is UnifiedTimelineItem.NotificationItem -> when (item.category) {
+                    NotificationCategory.CALLS -> FeedTypeFilter.CALLS
+                    NotificationCategory.WHATSAPP,
+                    NotificationCategory.MESSAGES,
+                    NotificationCategory.SOCIAL -> FeedTypeFilter.MESSAGES
+                    NotificationCategory.EMAIL -> FeedTypeFilter.EMAILS
+                    NotificationCategory.SYSTEM,
+                    NotificationCategory.URGENT,
+                    NotificationCategory.PROMOTIONS,
+                    NotificationCategory.ALL -> FeedTypeFilter.SYSTEM
+                }
             }
-            NotificationCategory.CALLS -> profileFiltered.filter {
-                it is UnifiedTimelineItem.CallLogItem || (it is UnifiedTimelineItem.NotificationItem && it.category == NotificationCategory.CALLS)
-            }
-            NotificationCategory.EMAIL -> profileFiltered.filter {
-                it is UnifiedTimelineItem.NotificationItem && it.category == NotificationCategory.EMAIL
-            }
-            NotificationCategory.MESSAGES -> profileFiltered.filter {
-                it is UnifiedTimelineItem.NotificationItem && it.category == NotificationCategory.MESSAGES
-            }
-            NotificationCategory.SOCIAL -> profileFiltered.filter {
-                it is UnifiedTimelineItem.NotificationItem && (it.category == NotificationCategory.SOCIAL || it.group == NotificationCategory.SOCIAL)
-            }
-            NotificationCategory.URGENT -> profileFiltered.filter {
+            feedType in state.visibleFeedTypes
+        }
+
+        // Focus Mode: suppress all non-urgent notifications based on keyword categorization
+        val focusFiltered = if (state.isFocusModeEnabled) {
+            visibilityFiltered.filter {
                 it is UnifiedTimelineItem.NotificationItem && it.group == NotificationCategory.URGENT
             }
-            NotificationCategory.PROMOTIONS -> profileFiltered.filter {
+        } else {
+            visibilityFiltered
+        }
+
+        // Filter by category
+        val categoryFiltered = when (state.selectedCategory) {
+            NotificationCategory.ALL -> focusFiltered
+            NotificationCategory.WHATSAPP -> focusFiltered.filter {
+                it is UnifiedTimelineItem.NotificationItem && it.category == NotificationCategory.WHATSAPP
+            }
+            NotificationCategory.CALLS -> focusFiltered.filter {
+                it is UnifiedTimelineItem.CallLogItem || (it is UnifiedTimelineItem.NotificationItem && it.category == NotificationCategory.CALLS)
+            }
+            NotificationCategory.EMAIL -> focusFiltered.filter {
+                it is UnifiedTimelineItem.NotificationItem && it.category == NotificationCategory.EMAIL
+            }
+            NotificationCategory.MESSAGES -> focusFiltered.filter {
+                it is UnifiedTimelineItem.NotificationItem && (
+                    it.category == NotificationCategory.MESSAGES ||
+                        it.category == NotificationCategory.WHATSAPP ||
+                        it.category == NotificationCategory.SOCIAL
+                    )
+            }
+            NotificationCategory.SOCIAL -> focusFiltered.filter {
+                it is UnifiedTimelineItem.NotificationItem && (it.category == NotificationCategory.SOCIAL || it.group == NotificationCategory.SOCIAL)
+            }
+            NotificationCategory.URGENT -> focusFiltered.filter {
+                it is UnifiedTimelineItem.NotificationItem && it.group == NotificationCategory.URGENT
+            }
+            NotificationCategory.PROMOTIONS -> focusFiltered.filter {
                 it is UnifiedTimelineItem.NotificationItem && it.group == NotificationCategory.PROMOTIONS
             }
-            NotificationCategory.SYSTEM -> profileFiltered.filter {
+            NotificationCategory.SYSTEM -> focusFiltered.filter {
                 it is UnifiedTimelineItem.NotificationItem && it.category == NotificationCategory.SYSTEM
             }
         }
@@ -383,6 +603,21 @@ class OmniViewModel(
         _uiState.update { it.copy(selectedCategory = category) }
     }
 
+    fun toggleFeedType(type: FeedTypeFilter) {
+        viewModelScope.launch {
+            val current = uiState.value.visibleFeedTypes
+            val updated = if (type in current) current - type else current + type
+            themePrefs.setVisibleFeedTypes(updated)
+        }
+    }
+
+    fun resetFeedTypeFilters() {
+        viewModelScope.launch {
+            themePrefs.setVisibleFeedTypes(FeedTypeFilter.entries.toSet())
+            _uiState.update { it.copy(selectedCategory = NotificationCategory.ALL) }
+        }
+    }
+
     fun setSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
     }
@@ -417,6 +652,12 @@ class OmniViewModel(
     fun toggleStarred(item: UnifiedTimelineItem.NotificationItem) {
         viewModelScope.launch {
             notificationRepo.toggleStarred(item.dbId)
+        }
+    }
+
+    fun togglePinned(item: UnifiedTimelineItem.NotificationItem) {
+        viewModelScope.launch {
+            notificationRepo.togglePinThread(item.packageName, item.title, item.isPinned)
         }
     }
 

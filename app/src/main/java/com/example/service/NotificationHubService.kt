@@ -17,6 +17,7 @@ import android.util.Log
 import com.example.data.local.AppDatabase
 import com.example.data.local.NotificationEntity
 import com.example.data.local.NotificationSettingEntity
+import com.example.data.local.ThemePreferences
 import com.example.data.model.NotificationCategory
 import com.example.data.model.NotificationEvent
 import com.example.util.NotificationTonePlayer
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
@@ -228,6 +230,7 @@ class NotificationHubService : NotificationListenerService() {
                 val settingsDao = db.notificationSettingDao()
                 val notificationDao = db.notificationDao()
                 val senderToneRuleDao = db.senderToneRuleDao()
+                val pinnedThreadDao = db.pinnedThreadDao()
 
                 // Check or create per-app setting
                 var setting = settingsDao.getSettingForApp(packageName)
@@ -244,6 +247,7 @@ class NotificationHubService : NotificationListenerService() {
                 val senderRule = senderToneRuleDao.getRule("${packageName}|${resolvedTitle.trim()}")
                 val resolvedToneUri = senderRule?.toneUri ?: setting.customToneUri
                 val resolvedToneName = senderRule?.toneName ?: setting.customToneName
+                val isThreadPinned = pinnedThreadDao.isThreadPinned("${packageName}|${resolvedTitle.trim().lowercase()}")
 
                 val resolvedProfile = if (isWorkUser) "WORK" else setting.profileName
 
@@ -264,7 +268,8 @@ class NotificationHubService : NotificationListenerService() {
                         profileName = resolvedProfile,
                         customToneUri = resolvedToneUri,
                         customToneName = resolvedToneName,
-                        isRead = setting.isSilent
+                        isRead = setting.isSilent,
+                        isPinned = existing.isPinned || isThreadPinned
                     )
                     notificationDao.updateNotification(updated)
                 } else {
@@ -281,15 +286,26 @@ class NotificationHubService : NotificationListenerService() {
                         customToneUri = resolvedToneUri,
                         customToneName = resolvedToneName,
                         isRead = setting.isSilent,
-                        isStarred = false
+                        isStarred = false,
+                        isPinned = isThreadPinned
                     )
                     notificationDao.insertNotification(entity)
                 }
 
                 // Play configured custom tone for new/updated notifications if app isn't muted
+                val focusModeActive = ThemePreferences(applicationContext).isFocusModeEnabled.first()
+                val urgentKeywords = listOf(
+                    "otp", "verification", "code", "urgent", "critical",
+                    "immediate", "alert", "security", "warning", "emergency"
+                )
+                val isUrgent = urgentKeywords.any {
+                    "$resolvedTitle $text $appName".lowercase().contains(it)
+                }
+
                 if (playSound &&
                     isNewOrUpdatedTimestamp &&
                     !setting.isSilent &&
+                    (!focusModeActive || isUrgent) &&
                     !resolvedToneUri.isNullOrBlank() &&
                     resolvedToneUri != NotificationTonePlayer.URI_SILENT
                 ) {

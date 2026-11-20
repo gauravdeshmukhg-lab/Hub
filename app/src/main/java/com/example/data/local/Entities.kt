@@ -18,7 +18,16 @@ data class NotificationEntity(
     val customToneUri: String? = null,
     val customToneName: String? = null,
     val isRead: Boolean = false,
-    val isStarred: Boolean = false
+    val isStarred: Boolean = false,
+    val isPinned: Boolean = false
+)
+
+@Entity(tableName = "pinned_threads")
+data class PinnedThreadEntity(
+    @PrimaryKey val threadKey: String, // "$packageName|${title.trim().lowercase()}"
+    val packageName: String,
+    val title: String,
+    val pinnedAt: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "notification_settings")

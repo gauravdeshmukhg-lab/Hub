@@ -13,7 +13,8 @@ class OmniApplication : Application() {
         NotificationRepository(
             database.notificationDao(),
             database.notificationSettingDao(),
-            database.senderToneRuleDao()
+            database.senderToneRuleDao(),
+            database.pinnedThreadDao()
         )
     }
     val callLogRepository by lazy { CallLogRepository(this, database.callLogDao()) }
